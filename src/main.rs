@@ -402,7 +402,6 @@ impl HabitCtl {
             .find(|entry| entry.date == *date && entry.habit == *habit)
     }
 
-    // To complete with history to get if satisfied or not
     fn day_status(&self, habit: &Habit, date: &NaiveDate) -> DayStatus {
         let ds: DayStatus;
         if let Some(entry) = self.get_entry(&date, &habit.name) {
