@@ -8,7 +8,6 @@ extern crate rprompt;
 
 use chrono::prelude::*;
 use clap::{Arg, SubCommand};
-use math::round;
 use std::cmp;
 use std::collections::HashMap;
 use std::env;
@@ -223,7 +222,7 @@ impl HabitCtl {
 
         if !self.habits.is_empty() {
             let date = to.checked_sub_signed(chrono::Duration::days(1)).unwrap();
-            println!("Yesterday's score: {}%", self.get_score(&date));
+            println!("Total score: {}%", self.get_score(&date));
         }
     }
 
@@ -236,10 +235,20 @@ impl HabitCtl {
                 "{0: >1}",
                 &self.spark(self.day_status(&habit, &current).score)
             );
-
             current = current
                 .checked_add_signed(chrono::Duration::days(1))
                 .unwrap();
+        }
+        if habit.every_days > 0 {
+            print!(
+                "{0: >6}% ",
+                format!(
+                    "{0:.1}",
+                    self.get_habit_score(habit, &(to - chrono::Duration::days(1)))
+                )
+            )
+        } else {
+            print!("       ");
         }
     }
 
@@ -438,32 +447,25 @@ impl HabitCtl {
     }
 
     fn get_score(&self, score_date: &NaiveDate) -> f32 {
-        let mut todo: Vec<bool> = self
+        let todo: Vec<f32> = self
             .habits
             .iter()
-            .map(|habit| habit.every_days > 0)
+            .map(|habit| f32::min(100., self.get_habit_score(habit, score_date)))
             .collect();
-        todo.retain(|value| *value);
+        return todo.iter().sum::<f32>() / todo.len() as f32;
+    }
 
-        // to correct with better complition calculation
-        let mut satisfied: Vec<bool> = self
-            .habits
+    fn get_habit_score(&self, habit: &Habit, up_to: &NaiveDate) -> f32 {
+        let log_habit = self.log.get(&habit.name).unwrap();
+        let sum_scores = log_habit
             .iter()
-            .map(|habit| {
-                let status = self.day_status(&habit, &score_date);
-                habit.every_days > 0 && status.satisfied
+            .filter(|x| {
+                x.0 > *up_to - chrono::Duration::days(habit.every_days as i64) && x.0 <= *up_to
             })
-            .collect();
-        satisfied.retain(|value| *value);
-
-        if !todo.is_empty() {
-            round::ceil(
-                (100.0 * satisfied.len() as f32 / (todo.len() as f32)).into(),
-                1,
-            ) as f32
-        } else {
-            0.0
-        }
+            .map(|x| x.1)
+            .sum::<i32>();
+        let score = sum_scores as f32 / habit.range as f32;
+        return score * 100.;
     }
 
     fn assert_habits(&self) {
