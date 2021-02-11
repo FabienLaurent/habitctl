@@ -5,9 +5,13 @@ extern crate dirs;
 extern crate math;
 extern crate open;
 extern crate rprompt;
+extern crate serde;
+extern crate serde_json;
 
 use chrono::prelude::*;
 use clap::{Arg, SubCommand};
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
 use std::cmp;
 use std::collections::HashMap;
 use std::env;
@@ -100,7 +104,6 @@ struct HabitCtl {
 
 struct DayStatus {
     score: f32,
-    satisfied: bool,
 }
 
 impl HabitCtl {
@@ -113,7 +116,7 @@ impl HabitCtl {
         }
 
         let mut habits_file = habitctl_dir.clone();
-        habits_file.push("habits");
+        habits_file.push("habits.json");
         if !habits_file.is_file() {
             fs::File::create(&habits_file).unwrap();
             println!(
@@ -257,33 +260,8 @@ impl HabitCtl {
         let f = File::open(&self.habits_file).unwrap();
         let file = BufReader::new(&f);
 
-        let mut habits = vec![];
-
-        for line in file.lines() {
-            let l = line.unwrap();
-
-            if l.chars().count() > 0 {
-                let first_char = l.chars().next().unwrap();
-                if first_char != '#' && first_char != '\n' {
-                    let split = l.trim().splitn(3, ' ');
-                    let parts: Vec<&str> = split.collect();
-
-                    habits.push(Habit {
-                        every_days: parts[0]
-                            .parse()
-                            .map_err(|x| format!("Couldn't parse {} {}", x, parts[0]))
-                            .unwrap(),
-                        range: parts[1]
-                            .parse()
-                            .map_err(|x| format!("Couldn't parse {} {}", x, parts[1]))
-                            .unwrap(),
-                        name: String::from(parts[2]),
-                    });
-                }
-            }
-        }
-
-        habits
+        let habits = serde_json::from_reader(file);
+        habits.unwrap()
     }
 
     fn ask(&mut self, ago: i64) {
@@ -407,13 +385,9 @@ impl HabitCtl {
         if let Some(entry) = self.get_entry(&date, &habit.name) {
             ds = DayStatus {
                 score: entry.value as f32 / habit.range as f32,
-                satisfied: false,
             };
         } else {
-            ds = DayStatus {
-                score: 0.,
-                satisfied: false,
-            };
+            ds = DayStatus { score: 0. };
         }
         ds
     }
@@ -455,16 +429,40 @@ impl HabitCtl {
     }
 
     fn get_habit_score(&self, habit: &Habit, up_to: &NaiveDate) -> f32 {
-        let log_habit = self.log.get(&habit.name).unwrap();
-        let sum_scores = log_habit
+        let log_habit = self
+            .log
+            .get(&habit.name)
+            .expect(&format!("Couldn't find {} in the log", habit.name));
+        let sum_val = log_habit
             .iter()
             .filter(|x| {
                 x.0 > *up_to - chrono::Duration::days(habit.every_days as i64) && x.0 <= *up_to
             })
             .map(|x| x.1)
             .sum::<i32>();
-        let score = sum_scores as f32 / habit.range as f32;
-        return score * 100.;
+        let relevant_score: Vec<&(chrono::NaiveDate, i32)> = log_habit
+            .iter()
+            .filter(|x| {
+                x.0 > *up_to - chrono::Duration::days(habit.every_days as i64) && x.0 <= *up_to
+            })
+            .collect();
+
+        print!(
+            "\n {:?}{:?}_{:?} => {:?} {:?}\n",
+            *up_to - chrono::Duration::days(habit.every_days as i64),
+            up_to,
+            habit.name,
+            sum_val,
+            relevant_score
+        );
+        // I need now to mesure how far I am from the target
+        // If the target is not 0, it's easy
+        if habit.target > 0 {
+            return 100. * (1. - ((habit.target as f32 - sum_val as f32) / habit.target as f32));
+        } else {
+            // target is 0, I need to calculate the score so that 0% is he worst possible value
+            return 100. * (1. - (sum_val as f32 / (habit.every_days as f32 * habit.range as f32)));
+        }
     }
 
     fn assert_habits(&self) {
@@ -506,7 +504,9 @@ struct Entry {
     value: i32,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 struct Habit {
+    target: i32,
     every_days: i32,
     range: i32,
     name: String,
