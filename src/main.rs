@@ -11,7 +11,6 @@ extern crate serde_json;
 use chrono::prelude::*;
 use clap::{Arg, SubCommand};
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
 use std::cmp;
 use std::collections::HashMap;
 use std::env;
@@ -247,7 +246,7 @@ impl HabitCtl {
                 "{0: >6}% ",
                 format!(
                     "{0:.1}",
-                    self.get_habit_score(habit, &(to - chrono::Duration::days(1)))
+                    self.get_habit_score_from(habit, &(to - chrono::Duration::days(1)))
                 )
             )
         } else {
@@ -296,6 +295,9 @@ impl HabitCtl {
                             break;
                         }
                     }
+                }
+                if habit.target == 0 {
+                    int_value = habit.range - int_value;
                 }
 
                 if value != "" {
@@ -423,46 +425,28 @@ impl HabitCtl {
         let todo: Vec<f32> = self
             .habits
             .iter()
-            .map(|habit| f32::min(100., self.get_habit_score(habit, score_date)))
+            .map(|habit| f32::min(100., self.get_habit_score_from(habit, score_date)))
             .collect();
         return todo.iter().sum::<f32>() / todo.len() as f32;
     }
 
-    fn get_habit_score(&self, habit: &Habit, up_to: &NaiveDate) -> f32 {
+    fn get_habit_score_from(&self, habit: &Habit, up_to: &NaiveDate) -> f32 {
         let log_habit = self
             .log
             .get(&habit.name)
             .expect(&format!("Couldn't find {} in the log", habit.name));
         let sum_val = log_habit
             .iter()
-            .filter(|x| {
-                x.0 > *up_to - chrono::Duration::days(habit.every_days as i64) && x.0 <= *up_to
+            .map(|x| {
+                if x.0 > *up_to - chrono::Duration::days(habit.every_days as i64) && x.0 <= *up_to {
+                    x.1
+                } else {
+                    0
+                }
             })
-            .map(|x| x.1)
             .sum::<i32>();
-        let relevant_score: Vec<&(chrono::NaiveDate, i32)> = log_habit
-            .iter()
-            .filter(|x| {
-                x.0 > *up_to - chrono::Duration::days(habit.every_days as i64) && x.0 <= *up_to
-            })
-            .collect();
 
-        print!(
-            "\n {:?}{:?}_{:?} => {:?} {:?}\n",
-            *up_to - chrono::Duration::days(habit.every_days as i64),
-            up_to,
-            habit.name,
-            sum_val,
-            relevant_score
-        );
-        // I need now to mesure how far I am from the target
-        // If the target is not 0, it's easy
-        if habit.target > 0 {
-            return 100. * (1. - ((habit.target as f32 - sum_val as f32) / habit.target as f32));
-        } else {
-            // target is 0, I need to calculate the score so that 0% is he worst possible value
-            return 100. * (1. - (sum_val as f32 / (habit.every_days as f32 * habit.range as f32)));
-        }
+        return 100. * (sum_val as f32 / (habit.every_days as f32 * habit.range as f32));
     }
 
     fn assert_habits(&self) {
