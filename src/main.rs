@@ -47,7 +47,7 @@ fn main() {
 
     let ago: i64 = if habitctl.first_date().is_some() {
         cmp::min(
-            7,
+            1,
             Local::today()
                 .naive_local()
                 .signed_duration_since(habitctl.first_date().unwrap())
@@ -224,7 +224,7 @@ impl HabitCtl {
 
         if !self.habits.is_empty() {
             let date = to.checked_sub_signed(chrono::Duration::days(1)).unwrap();
-            println!("Total score: {}%", self.get_score(&date));
+            println!("Total score: {}%", self.get_score(&date) * 100.);
         }
     }
 
@@ -246,7 +246,7 @@ impl HabitCtl {
                 "{0: >6}% ",
                 format!(
                     "{0:.1}",
-                    self.get_habit_score_from(habit, &(to - chrono::Duration::days(1)))
+                    self.get_habit_score_from(habit, &(to - chrono::Duration::days(1))) * 100.
                 )
             )
         } else {
@@ -425,7 +425,7 @@ impl HabitCtl {
         let todo: Vec<f32> = self
             .habits
             .iter()
-            .map(|habit| f32::min(100., self.get_habit_score_from(habit, score_date)))
+            .map(|habit| f32::min(1., self.get_habit_score_from(habit, score_date)))
             .collect();
         return todo.iter().sum::<f32>() / todo.len() as f32;
     }
@@ -446,7 +446,7 @@ impl HabitCtl {
             })
             .sum::<i32>();
 
-        return 100. * (sum_val as f32 / (habit.every_days as f32 * habit.range as f32));
+        sum_val as f32 / (habit.every_days as f32 * habit.range as f32)
     }
 
     fn assert_habits(&self) {
